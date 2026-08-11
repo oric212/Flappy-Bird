@@ -31,6 +31,10 @@
 # Recordings can get excessive in size
 /[Rr]ecordings/
 
+# Unity scene recovery data is local to the editor session
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta
+
 # Uncomment this line if you wish to ignore the asset store tools plugin
 # /[Aa]ssets/AssetStoreTools*
 
@@ -42,6 +46,10 @@
 # Visual Studio cache directory
 .vs/
 
+# IDE workspace and local settings
+.idea/
+.vscode/
+
 # Gradle cache directory
 .gradle/
 
@@ -51,6 +59,7 @@ ExportedObj/
 *.csproj
 *.unityproj
 *.sln
+*.slnx
 *.suo
 *.tmp
 *.user
@@ -70,9 +79,16 @@ ExportedObj/
 
 # Unity3D generated file on crash reports
 sysinfo.txt
+*.dmp
+*.stackdump
 
 # Mono auto generated files
 mono_crash.*
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # Builds
 *.apk
