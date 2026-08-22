@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public class PipeSpawner : MonoBehaviour
 {
@@ -38,9 +39,9 @@ public class PipeSpawner : MonoBehaviour
     [SerializeField] private float maximumGapCenter = 1.5f;
     [SerializeField] private float minimumGapSize = 2.6f;
     [SerializeField] private float maximumGapSize = 3.6f;
-    [SerializeField] private float minimumPipeLength = 2.2f;
+    [FormerlySerializedAs("minimumPipeLength")]
+    [SerializeField] private float minimumVisiblePipeHeight = 2.2f;
     [SerializeField] private float maximumPipeLength = 5f;
-    [SerializeField] private float minimumStandardPipeLength = 0.65f;
 
     [Header("Validation")]
     [SerializeField] private float closeSpacingThreshold = 9.5f;
@@ -122,14 +123,13 @@ public class PipeSpawner : MonoBehaviour
             maximumGapCenter,
             minimumGapSize,
             maximumGapSize,
-            minimumPipeLength,
+            minimumVisiblePipeHeight,
             maximumPipeLength,
-            minimumStandardPipeLength,
             groundTopY,
             lowerPipeExtent,
             upperPipeExtent);
         layoutValidator = new PipeLayoutValidator(
-            minimumStandardPipeLength,
+            minimumVisiblePipeHeight,
             minimumGapSize,
             closeSpacingThreshold,
             minimumCloseRouteOverlap);

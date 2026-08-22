@@ -6366,9 +6366,8 @@ MonoBehaviour:
   maximumGapCenter: 1.5
   minimumGapSize: 2.6
   maximumGapSize: 3.6
-  minimumPipeLength: 2.2
+  minimumVisiblePipeHeight: 2.2
   maximumPipeLength: 5
-  minimumStandardPipeLength: 0.65
   closeSpacingThreshold: 9.5
   minimumCloseRouteOverlap: 1.1
   maximumRerollAttempts: 8

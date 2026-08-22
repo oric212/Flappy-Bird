@@ -33,9 +33,8 @@ internal sealed class PipeLayoutGenerator
     private readonly float maximumGapCenter;
     private readonly float minimumGapSize;
     private readonly float maximumGapSize;
-    private readonly float minimumPipeLength;
+    private readonly float minimumVisiblePipeHeight;
     private readonly float maximumPipeLength;
-    private readonly float minimumStandardPipeLength;
     private readonly float groundTopY;
     private readonly float lowerPipeExtent;
     private readonly float upperPipeExtent;
@@ -49,9 +48,8 @@ internal sealed class PipeLayoutGenerator
         float maxGapCenter,
         float minGapSize,
         float maxGapSize,
-        float minPipeLength,
+        float minVisiblePipeHeight,
         float maxPipeLength,
-        float minStandardPipeLength,
         float groundTop,
         float lowerExtent,
         float upperExtent)
@@ -64,9 +62,8 @@ internal sealed class PipeLayoutGenerator
         maximumGapCenter = maxGapCenter;
         minimumGapSize = minGapSize;
         maximumGapSize = maxGapSize;
-        minimumPipeLength = minPipeLength;
+        minimumVisiblePipeHeight = minVisiblePipeHeight;
         maximumPipeLength = maxPipeLength;
-        minimumStandardPipeLength = minStandardPipeLength;
         groundTopY = groundTop;
         lowerPipeExtent = lowerExtent;
         upperPipeExtent = upperExtent;
@@ -104,15 +101,15 @@ internal sealed class PipeLayoutGenerator
         {
             case PipeObstacleType.BottomOnly:
                 return CreateBottomOnlyLayout(
-                    Random.Range(minimumPipeLength, maximumPipeLength));
+                    Random.Range(minimumVisiblePipeHeight, maximumPipeLength));
 
             case PipeObstacleType.TopOnly:
                 return CreateTopOnlyLayout(
-                    Random.Range(minimumPipeLength, maximumPipeLength));
+                    Random.Range(minimumVisiblePipeHeight, maximumPipeLength));
 
             case PipeObstacleType.AsymmetricPair:
-                float topLength = Random.Range(minimumPipeLength, maximumPipeLength);
-                float bottomLength = Random.Range(minimumPipeLength, maximumPipeLength);
+                float topLength = Random.Range(minimumVisiblePipeHeight, maximumPipeLength);
+                float bottomLength = Random.Range(minimumVisiblePipeHeight, maximumPipeLength);
                 return CreateAsymmetricLayout(topLength, bottomLength);
 
             default:
@@ -134,15 +131,15 @@ internal sealed class PipeLayoutGenerator
         switch (type)
         {
             case PipeObstacleType.BottomOnly:
-                return CreateBottomOnlyLayout(minimumStandardPipeLength);
+                return CreateBottomOnlyLayout(minimumVisiblePipeHeight);
 
             case PipeObstacleType.TopOnly:
-                return CreateTopOnlyLayout(minimumStandardPipeLength);
+                return CreateTopOnlyLayout(minimumVisiblePipeHeight);
 
             case PipeObstacleType.AsymmetricPair:
                 return CreateAsymmetricLayout(
-                    minimumStandardPipeLength,
-                    minimumStandardPipeLength);
+                    minimumVisiblePipeHeight,
+                    minimumVisiblePipeHeight);
 
             default:
                 return CreateOverlappingStandardLayout(
@@ -153,10 +150,10 @@ internal sealed class PipeLayoutGenerator
 
     public PipeLayout CreateEmergencyFallbackLayout()
     {
-        float maximumOpenBottom = lowerPipeExtent + minimumStandardPipeLength;
-        float maximumOpenTop = upperPipeExtent - minimumStandardPipeLength;
+        float maximumOpenBottom = lowerPipeExtent + minimumVisiblePipeHeight;
+        float maximumOpenTop = upperPipeExtent - minimumVisiblePipeHeight;
 
-        if (maximumOpenTop <= maximumOpenBottom)
+        if (maximumOpenTop - maximumOpenBottom < minimumGapSize)
         {
             throw new InvalidOperationException(
                 "Pipe configuration leaves no room for a playable fallback route.");
@@ -167,8 +164,8 @@ internal sealed class PipeLayoutGenerator
             Type = PipeObstacleType.StandardPair,
             HasTopPipe = true,
             HasBottomPipe = true,
-            TopPipeLength = minimumStandardPipeLength,
-            BottomPipeLength = minimumStandardPipeLength,
+            TopPipeLength = minimumVisiblePipeHeight,
+            BottomPipeLength = minimumVisiblePipeHeight,
             RouteBottom = maximumOpenBottom,
             RouteTop = maximumOpenTop
         };
@@ -188,16 +185,33 @@ internal sealed class PipeLayoutGenerator
         switch (type)
         {
             case PipeObstacleType.BottomOnly:
-                return CreateBottomOnlyLayout(minimumPipeLength);
+                return CreateBottomOnlyLayout(minimumVisiblePipeHeight);
 
             case PipeObstacleType.TopOnly:
-                return CreateTopOnlyLayout(minimumPipeLength);
+                return CreateTopOnlyLayout(minimumVisiblePipeHeight);
 
             case PipeObstacleType.AsymmetricPair:
-                return CreateAsymmetricLayout(minimumPipeLength, minimumPipeLength);
+                return CreateAsymmetricLayout(
+                    minimumVisiblePipeHeight,
+                    minimumVisiblePipeHeight);
 
             default:
-                return CreateStandardLayout(0f, StandardFallbackGapSize);
+                float gapSize = Mathf.Clamp(
+                    StandardFallbackGapSize,
+                    minimumGapSize,
+                    maximumGapSize);
+                float lowestCenter = GetLowestStandardGapCenter(gapSize);
+                float highestCenter = GetHighestStandardGapCenter(gapSize);
+                if (highestCenter < lowestCenter)
+                {
+                    return CreateEmergencyFallbackLayout();
+                }
+
+                float gapCenter = Mathf.Clamp(
+                    0f,
+                    lowestCenter,
+                    highestCenter);
+                return CreateStandardLayout(gapCenter, gapSize);
         }
     }
 
@@ -275,13 +289,13 @@ internal sealed class PipeLayoutGenerator
     {
         return Mathf.Max(
             minimumGapCenter,
-            lowerPipeExtent + minimumStandardPipeLength + gapSize * 0.5f);
+            lowerPipeExtent + minimumVisiblePipeHeight + gapSize * 0.5f);
     }
 
     private float GetHighestStandardGapCenter(float gapSize)
     {
         return Mathf.Min(
             maximumGapCenter,
-            upperPipeExtent - minimumStandardPipeLength - gapSize * 0.5f);
+            upperPipeExtent - minimumVisiblePipeHeight - gapSize * 0.5f);
     }
 }

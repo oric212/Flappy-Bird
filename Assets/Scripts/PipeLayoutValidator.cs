@@ -2,18 +2,18 @@ using UnityEngine;
 
 internal sealed class PipeLayoutValidator
 {
-    private readonly float minimumPipeLength;
+    private readonly float minimumVisiblePipeHeight;
     private readonly float minimumRouteHeight;
     private readonly float closeSpacingThreshold;
     private readonly float minimumCloseRouteOverlap;
 
     public PipeLayoutValidator(
-        float minPipeLength,
+        float minVisiblePipeHeight,
         float minRouteHeight,
         float closeSpacing,
         float minCloseRouteOverlap)
     {
-        minimumPipeLength = minPipeLength;
+        minimumVisiblePipeHeight = minVisiblePipeHeight;
         minimumRouteHeight = minRouteHeight;
         closeSpacingThreshold = closeSpacing;
         minimumCloseRouteOverlap = minCloseRouteOverlap;
@@ -45,12 +45,14 @@ internal sealed class PipeLayoutValidator
 
     private bool HasValidPipeLengths(PipeLayout layout)
     {
-        if (layout.HasBottomPipe && layout.BottomPipeLength < minimumPipeLength)
+        if (layout.HasBottomPipe
+            && layout.BottomPipeLength < minimumVisiblePipeHeight)
         {
             return false;
         }
 
-        return !layout.HasTopPipe || layout.TopPipeLength >= minimumPipeLength;
+        return !layout.HasTopPipe
+            || layout.TopPipeLength >= minimumVisiblePipeHeight;
     }
 
     private bool HasValidRouteHeight(PipeLayout layout)
