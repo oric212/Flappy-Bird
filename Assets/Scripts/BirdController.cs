@@ -5,18 +5,28 @@ using UnityEngine.InputSystem;
 public class BirdController : MonoBehaviour
 {
     [SerializeField] private float flapStrength = 5f;
-    [SerializeField] private float forwardSpeed = 2.5f;
+    [SerializeField] private float forwardSpeed = 2.8f;
     [SerializeField] private GameManager gameManager;
     [SerializeField] private Camera gameplayCamera;
     [SerializeField] private float topBoundaryTolerance = 0.1f;
+    [SerializeField] private AudioManager audioManager;
+    [SerializeField] private float boostedForwardSpeed = 4.6f;
+    [SerializeField] private float speedBoostDuration = 5f;
 
     private Rigidbody2D birdRigidbody;
     private CircleCollider2D birdCollider;
+    private float normalGravityScale;
+    private float speedBoostTimeRemaining;
+
+    public bool IsSpeedBoosted => speedBoostTimeRemaining > 0f;
+    public float SpeedBoostTimeRemaining => Mathf.Max(0f, speedBoostTimeRemaining);
 
     private void Awake()
     {
         birdRigidbody = GetComponent<Rigidbody2D>();
         birdCollider = GetComponent<CircleCollider2D>();
+        normalGravityScale = birdRigidbody.gravityScale;
+        birdRigidbody.gravityScale = 0f;
 
         if (gameplayCamera == null)
         {
@@ -29,6 +39,25 @@ public class BirdController : MonoBehaviour
         if (gameManager.IsGameOver)
         {
             return;
+        }
+
+        bool spacePressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+        bool mousePressed = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+        bool flapPressed = spacePressed || mousePressed;
+
+        if (gameManager.IsWaitingToStart)
+        {
+            return;
+        }
+
+        if (birdRigidbody.gravityScale == 0f)
+        {
+            birdRigidbody.gravityScale = normalGravityScale;
+        }
+
+        if (speedBoostTimeRemaining > 0f)
+        {
+            speedBoostTimeRemaining -= Time.deltaTime;
         }
 
         float cameraTop = gameplayCamera.transform.position.y + gameplayCamera.orthographicSize;
@@ -52,24 +81,23 @@ public class BirdController : MonoBehaviour
             return;
         }
 
-        bool spacePressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
-        bool mousePressed = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
-
-        if (spacePressed || mousePressed)
+        if (flapPressed && gameManager.CanAcceptGameplayInput)
         {
             birdRigidbody.linearVelocity = new Vector2(birdRigidbody.linearVelocity.x, flapStrength);
+            audioManager?.PlayFlap();
         }
     }
 
     private void FixedUpdate()
     {
-        if (gameManager.IsGameOver)
+        if (!gameManager.IsPlaying)
         {
-            birdRigidbody.linearVelocity = new Vector2(0f, birdRigidbody.linearVelocity.y);
+            birdRigidbody.linearVelocity = Vector2.zero;
             return;
         }
 
-        birdRigidbody.linearVelocity = new Vector2(forwardSpeed, birdRigidbody.linearVelocity.y);
+        float currentSpeed = IsSpeedBoosted ? boostedForwardSpeed : forwardSpeed;
+        birdRigidbody.linearVelocity = new Vector2(currentSpeed, birdRigidbody.linearVelocity.y);
     }
 
     private void OnCollisionEnter2D(Collision2D collision)
@@ -85,7 +113,19 @@ public class BirdController : MonoBehaviour
 
     private void StopRun()
     {
+        speedBoostTimeRemaining = 0f;
         gameManager.TriggerGameOver();
         birdRigidbody.linearVelocity = new Vector2(0f, birdRigidbody.linearVelocity.y);
+    }
+
+    public bool ApplySpeedBoost()
+    {
+        if (!gameManager.IsPlaying)
+        {
+            return false;
+        }
+
+        speedBoostTimeRemaining = speedBoostDuration;
+        return true;
     }
 }

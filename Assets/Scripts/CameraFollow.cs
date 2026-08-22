@@ -17,7 +17,7 @@ public class CameraFollow : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (target == null || gameManager.IsGameOver)
+        if (target == null || !gameManager.IsPlaying)
         {
             return;
         }

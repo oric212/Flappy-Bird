@@ -7,11 +7,14 @@ public class PipeObstacle : MonoBehaviour
 
     private Transform bird;
     private ScoreManager scoreManager;
+    private AudioManager audioManager;
 
-    public void Initialize(Transform birdTransform, ScoreManager manager, string typeName)
+    public void Initialize(Transform birdTransform, ScoreManager manager,
+        AudioManager audio, string typeName)
     {
         bird = birdTransform;
         scoreManager = manager;
+        audioManager = audio;
         ObstacleType = typeName;
         HasScored = false;
     }
@@ -20,8 +23,11 @@ public class PipeObstacle : MonoBehaviour
     {
         if (!HasScored && bird != null && bird.position.x > transform.position.x)
         {
-            scoreManager.AddPoint();
-            HasScored = true;
+            if (scoreManager.TryAddPoint())
+            {
+                audioManager?.PlayScore();
+                HasScored = true;
+            }
         }
     }
 }

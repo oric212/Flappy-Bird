@@ -6,13 +6,14 @@ public class ScoreManager : MonoBehaviour
 
     public int CurrentScore { get; private set; }
 
-    public void AddPoint()
+    public bool TryAddPoint()
     {
-        if (gameManager.IsGameOver)
+        if (!gameManager.IsPlaying)
         {
-            return;
+            return false;
         }
 
         CurrentScore++;
+        return true;
     }
 }

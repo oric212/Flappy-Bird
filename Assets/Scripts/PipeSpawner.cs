@@ -28,6 +28,12 @@ public class PipeSpawner : MonoBehaviour
     [SerializeField] private GameObject pipeObstaclePrefab;
     [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private GameManager gameManager;
+    [SerializeField] private AudioManager audioManager;
+    [SerializeField] private GameObject sonicPowerUpPrefab;
+    [SerializeField, Range(0f, 1f)] private float sonicSpawnProbability = 0.12f;
+    [SerializeField] private GameObject coinPrefab;
+    [SerializeField, Range(0f, 1f)] private float coinSpawnProbability = 0.28f;
+    [SerializeField] private GroundLooper groundLooper;
 
     [Header("Obstacle Type Weights")]
     [SerializeField] private float standardPairWeight = 35f;
@@ -36,8 +42,8 @@ public class PipeSpawner : MonoBehaviour
     [SerializeField] private float asymmetricPairWeight = 15f;
 
     [Header("Horizontal Placement")]
-    [SerializeField] private float minimumSpacing = 6f;
-    [SerializeField] private float maximumSpacing = 11f;
+    [SerializeField] private float minimumSpacing = 5.5f;
+    [SerializeField] private float maximumSpacing = 9.5f;
     [SerializeField] private float spawnAheadDistance = 34f;
     [SerializeField] private float cleanupBehindCameraMargin = 3f;
 
@@ -53,15 +59,16 @@ public class PipeSpawner : MonoBehaviour
     [SerializeField] private float maximumGapSize = 3.6f;
     [SerializeField] private float minimumPipeLength = 2.2f;
     [SerializeField] private float maximumPipeLength = 5f;
+    [SerializeField] private float minimumStandardPipeLength = 0.65f;
 
     [Header("Validation")]
     [SerializeField] private float closeSpacingThreshold = 9.5f;
     [SerializeField] private float minimumCloseRouteOverlap = 1.1f;
     [SerializeField] private int maximumRerollAttempts = 8;
 
-    [Header("World Extents")]
-    [SerializeField] private float lowerPipeExtent = -5.5f;
-    [SerializeField] private float upperPipeExtent = 5.5f;
+    [Header("World Bounds")]
+    [SerializeField] private float groundOverlap = 0.05f;
+    [SerializeField] private float upperScreenPadding = 0.5f;
 
     private readonly List<GameObject> activeObstacles = new List<GameObject>();
     private float nextSpawnX;
@@ -70,11 +77,31 @@ public class PipeSpawner : MonoBehaviour
     private float previousRouteTop;
     private bool hasPreviousObstacle;
     private int nearbyTarget;
+    private float groundTopY;
+    private float lowerPipeExtent;
+    private float upperPipeExtent;
+    private readonly List<float> recentObstacleXPositions = new List<float>();
+
+    public int ActiveObstacleCount => activeObstacles.Count;
+    public int MaximumActiveObstacleCount { get; private set; }
+    public int TotalGeneratedObstacleCount { get; private set; }
+    public int StandardPairCount { get; private set; }
+    public int AsymmetricPairCount { get; private set; }
+    public int BottomOnlyCount { get; private set; }
+    public int TopOnlyCount { get; private set; }
+    public int BottomPipesValidated { get; private set; }
+    public int InvalidBottomPipeCount { get; private set; }
+    public int TotalCoinsSpawned { get; private set; }
+    public float GroundTopY => groundTopY;
+    public float LowerPipeExtentY => lowerPipeExtent;
+    public float UpperPipeExtentY => upperPipeExtent;
+    public IReadOnlyList<float> RecentObstacleXPositions => recentObstacleXPositions;
 
     private void Start()
     {
         if (bird == null || pipeObstaclePrefab == null
-            || scoreManager == null || gameManager == null)
+            || scoreManager == null || gameManager == null
+            || groundLooper == null)
         {
             enabled = false;
             return;
@@ -85,14 +112,31 @@ public class PipeSpawner : MonoBehaviour
             targetCamera = Camera.main;
         }
 
+        BoxCollider2D[] groundColliders = groundLooper.GetComponentsInChildren<BoxCollider2D>();
+        if (groundColliders.Length == 0)
+        {
+            enabled = false;
+            return;
+        }
+
+        groundTopY = groundColliders[0].bounds.max.y;
+        foreach (BoxCollider2D groundCollider in groundColliders)
+        {
+            groundTopY = Mathf.Max(groundTopY, groundCollider.bounds.max.y);
+        }
+
+        lowerPipeExtent = groundTopY - groundOverlap;
+        upperPipeExtent = targetCamera.transform.position.y
+            + targetCamera.orthographicSize
+            + upperScreenPadding;
+
         nearbyTarget = Random.Range(minimumNearbyObstacles, maximumNearbyObstacles + 1);
         nextSpawnX = bird.position.x + Random.Range(minimumSpacing, maximumSpacing);
-        MaintainObstacleDensity();
     }
 
     private void Update()
     {
-        if (gameManager.IsGameOver)
+        if (!gameManager.IsPlaying)
         {
             return;
         }
@@ -136,11 +180,30 @@ public class PipeSpawner : MonoBehaviour
 
         obstacle.name = "PipeObstacle_" + layout.type;
         ConfigureObstacle(obstacle, layout);
+        RecordGeneratedObstacle(obstacle, layout);
         obstacle.GetComponent<PipeObstacle>().Initialize(
             bird,
             scoreManager,
+            audioManager,
             layout.type.ToString());
         activeObstacles.Add(obstacle);
+        MaximumActiveObstacleCount = Mathf.Max(
+            MaximumActiveObstacleCount,
+            activeObstacles.Count);
+
+        bool spawnedSonic = gameManager.ArcadeFeaturesEnabled
+            && sonicPowerUpPrefab != null
+            && Random.value < sonicSpawnProbability;
+        if (spawnedSonic)
+        {
+            SpawnSonicPowerUp(obstacle.transform, layout);
+        }
+        else if (gameManager.ArcadeFeaturesEnabled
+            && coinPrefab != null
+            && Random.value < coinSpawnProbability)
+        {
+            SpawnCoin(obstacle.transform, layout);
+        }
 
         previousObstacleX = worldX;
         previousRouteBottom = layout.routeBottom;
@@ -148,11 +211,84 @@ public class PipeSpawner : MonoBehaviour
         hasPreviousObstacle = true;
     }
 
+    private void RecordGeneratedObstacle(GameObject obstacle, ObstacleLayout layout)
+    {
+        TotalGeneratedObstacleCount++;
+        recentObstacleXPositions.Add(obstacle.transform.position.x);
+        if (recentObstacleXPositions.Count > 32)
+        {
+            recentObstacleXPositions.RemoveAt(0);
+        }
+
+        switch (layout.type)
+        {
+            case ObstacleType.StandardPair:
+                StandardPairCount++;
+                break;
+            case ObstacleType.AsymmetricPair:
+                AsymmetricPairCount++;
+                break;
+            case ObstacleType.BottomOnly:
+                BottomOnlyCount++;
+                break;
+            case ObstacleType.TopOnly:
+                TopOnlyCount++;
+                break;
+        }
+
+        if (!layout.hasBottomPipe)
+        {
+            return;
+        }
+
+        BottomPipesValidated++;
+        BoxCollider2D bottomCollider = obstacle.transform.Find("BottomPipe")
+            .GetComponent<BoxCollider2D>();
+        bool lowerEdgeIsValid = bottomCollider.bounds.min.y
+            >= lowerPipeExtent - 0.001f;
+        bool capIsAboveGround = bottomCollider.bounds.max.y > groundTopY;
+        if (!lowerEdgeIsValid || !capIsAboveGround)
+        {
+            InvalidBottomPipeCount++;
+        }
+    }
+
+    private void SpawnSonicPowerUp(Transform obstacleRoot, ObstacleLayout layout)
+    {
+        float safeBottom = layout.routeBottom + 0.5f;
+        float safeTop = layout.routeTop - 0.5f;
+        float worldY = Random.Range(safeBottom, safeTop);
+        GameObject powerUp = Instantiate(
+            sonicPowerUpPrefab,
+            new Vector3(obstacleRoot.position.x, worldY, 0f),
+            Quaternion.identity,
+            obstacleRoot);
+        powerUp.name = "SonicPowerUp";
+        powerUp.GetComponent<SonicPowerUp>().Initialize(audioManager);
+    }
+
+    private void SpawnCoin(Transform obstacleRoot, ObstacleLayout layout)
+    {
+        float safeBottom = layout.routeBottom + 0.45f;
+        float safeTop = layout.routeTop - 0.45f;
+        float worldY = Random.Range(safeBottom, safeTop);
+        GameObject coin = Instantiate(
+            coinPrefab,
+            new Vector3(obstacleRoot.position.x, worldY, 0f),
+            Quaternion.identity,
+            obstacleRoot);
+        coin.name = "Coin";
+        coin.GetComponent<CoinCollectible>().Initialize(scoreManager, audioManager);
+        TotalCoinsSpawned++;
+    }
+
     private ObstacleLayout GetValidatedLayout(float spacingFromPrevious)
     {
+        ObstacleType type = ChooseObstacleType();
+
         for (int attempt = 0; attempt < maximumRerollAttempts; attempt++)
         {
-            ObstacleLayout layout = CreateRandomLayout();
+            ObstacleLayout layout = CreateRandomLayout(type);
 
             if (IsLayoutPlayable(layout, spacingFromPrevious))
             {
@@ -160,13 +296,11 @@ public class PipeSpawner : MonoBehaviour
             }
         }
 
-        return CreateSafeFallbackLayout();
+        return CreateSafeFallbackLayout(type);
     }
 
-    private ObstacleLayout CreateRandomLayout()
+    private ObstacleLayout CreateRandomLayout(ObstacleType type)
     {
-        ObstacleType type = ChooseObstacleType();
-
         if (type == ObstacleType.BottomOnly)
         {
             float length = Random.Range(minimumPipeLength, maximumPipeLength);
@@ -176,7 +310,7 @@ public class PipeSpawner : MonoBehaviour
                 hasBottomPipe = true,
                 bottomPipeLength = length,
                 routeBottom = lowerPipeExtent + length,
-                routeTop = maximumGapCenter + maximumGapSize * 0.5f
+                routeTop = upperPipeExtent
             };
         }
 
@@ -188,7 +322,7 @@ public class PipeSpawner : MonoBehaviour
                 type = type,
                 hasTopPipe = true,
                 topPipeLength = length,
-                routeBottom = minimumGapCenter - maximumGapSize * 0.5f,
+                routeBottom = groundTopY,
                 routeTop = upperPipeExtent - length
             };
         }
@@ -209,8 +343,14 @@ public class PipeSpawner : MonoBehaviour
             };
         }
 
-        float gapCenter = Random.Range(minimumGapCenter, maximumGapCenter);
         float gapSize = Random.Range(minimumGapSize, maximumGapSize);
+        float lowestCenter = Mathf.Max(
+            minimumGapCenter,
+            lowerPipeExtent + minimumStandardPipeLength + gapSize * 0.5f);
+        float highestCenter = Mathf.Min(
+            maximumGapCenter,
+            upperPipeExtent - minimumStandardPipeLength - gapSize * 0.5f);
+        float gapCenter = Random.Range(lowestCenter, highestCenter);
         float gapBottom = gapCenter - gapSize * 0.5f;
         float gapTop = gapCenter + gapSize * 0.5f;
 
@@ -254,6 +394,18 @@ public class PipeSpawner : MonoBehaviour
 
     private bool IsLayoutPlayable(ObstacleLayout layout, float spacingFromPrevious)
     {
+        if (layout.hasBottomPipe
+            && layout.bottomPipeLength < minimumStandardPipeLength)
+        {
+            return false;
+        }
+
+        if (layout.hasTopPipe
+            && layout.topPipeLength < minimumStandardPipeLength)
+        {
+            return false;
+        }
+
         float routeHeight = layout.routeTop - layout.routeBottom;
         if (routeHeight < minimumGapSize)
         {
@@ -270,8 +422,46 @@ public class PipeSpawner : MonoBehaviour
         return sharedRouteTop - sharedRouteBottom >= minimumCloseRouteOverlap;
     }
 
-    private ObstacleLayout CreateSafeFallbackLayout()
+    private ObstacleLayout CreateSafeFallbackLayout(ObstacleType type)
     {
+        if (type == ObstacleType.BottomOnly)
+        {
+            return new ObstacleLayout
+            {
+                type = type,
+                hasBottomPipe = true,
+                bottomPipeLength = minimumPipeLength,
+                routeBottom = lowerPipeExtent + minimumPipeLength,
+                routeTop = upperPipeExtent
+            };
+        }
+
+        if (type == ObstacleType.TopOnly)
+        {
+            return new ObstacleLayout
+            {
+                type = type,
+                hasTopPipe = true,
+                topPipeLength = minimumPipeLength,
+                routeBottom = groundTopY,
+                routeTop = upperPipeExtent - minimumPipeLength
+            };
+        }
+
+        if (type == ObstacleType.AsymmetricPair)
+        {
+            return new ObstacleLayout
+            {
+                type = type,
+                hasTopPipe = true,
+                hasBottomPipe = true,
+                topPipeLength = minimumPipeLength,
+                bottomPipeLength = minimumPipeLength,
+                routeBottom = lowerPipeExtent + minimumPipeLength,
+                routeTop = upperPipeExtent - minimumPipeLength
+            };
+        }
+
         const float fallbackGapSize = 3.2f;
         return new ObstacleLayout
         {
