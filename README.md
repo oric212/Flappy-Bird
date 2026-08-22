@@ -8,7 +8,7 @@ The project recreates the classic flap-and-dodge gameplay while adding randomize
 
 - Physics-based flap controls
 - Endless ground and background
-- Randomized pipe generation
+- Procedural obstacle generation with route validation, safe rerolls, and fallback layouts to prevent impossible pipe combinations
 - Standard, asymmetric, top-only, and bottom-only pipes
 - Score and persistent high score
 - Optional Arcade Mode
