@@ -3,25 +3,6 @@ using UnityEngine;
 
 public class PipeSpawner : MonoBehaviour
 {
-    private enum ObstacleType
-    {
-        StandardPair,
-        BottomOnly,
-        TopOnly,
-        AsymmetricPair
-    }
-
-    private struct ObstacleLayout
-    {
-        public ObstacleType type;
-        public bool hasTopPipe;
-        public bool hasBottomPipe;
-        public float topPipeLength;
-        public float bottomPipeLength;
-        public float routeBottom;
-        public float routeTop;
-    }
-
     [Header("References")]
     [SerializeField] private Transform bird;
     [SerializeField] private Camera targetCamera;
@@ -81,6 +62,8 @@ public class PipeSpawner : MonoBehaviour
     private float lowerPipeExtent;
     private float upperPipeExtent;
     private readonly List<float> recentObstacleXPositions = new List<float>();
+    private PipeLayoutGenerator layoutGenerator;
+    private PipeLayoutValidator layoutValidator;
 
     public int ActiveObstacleCount => activeObstacles.Count;
     public int MaximumActiveObstacleCount { get; private set; }
@@ -130,6 +113,27 @@ public class PipeSpawner : MonoBehaviour
             + targetCamera.orthographicSize
             + upperScreenPadding;
 
+        layoutGenerator = new PipeLayoutGenerator(
+            standardPairWeight,
+            bottomOnlyWeight,
+            topOnlyWeight,
+            asymmetricPairWeight,
+            minimumGapCenter,
+            maximumGapCenter,
+            minimumGapSize,
+            maximumGapSize,
+            minimumPipeLength,
+            maximumPipeLength,
+            minimumStandardPipeLength,
+            groundTopY,
+            lowerPipeExtent,
+            upperPipeExtent);
+        layoutValidator = new PipeLayoutValidator(
+            minimumStandardPipeLength,
+            minimumGapSize,
+            closeSpacingThreshold,
+            minimumCloseRouteOverlap);
+
         nearbyTarget = Random.Range(minimumNearbyObstacles, maximumNearbyObstacles + 1);
         nextSpawnX = bird.position.x + Random.Range(minimumSpacing, maximumSpacing);
     }
@@ -172,20 +176,20 @@ public class PipeSpawner : MonoBehaviour
 
     private void SpawnObstacle(float worldX, float spacingFromPrevious)
     {
-        ObstacleLayout layout = GetValidatedLayout(spacingFromPrevious);
+        PipeLayout layout = GetValidatedLayout(spacingFromPrevious);
         GameObject obstacle = Instantiate(
             pipeObstaclePrefab,
             new Vector3(worldX, 0f, 0f),
             Quaternion.identity);
 
-        obstacle.name = "PipeObstacle_" + layout.type;
+        obstacle.name = "PipeObstacle_" + layout.Type;
         ConfigureObstacle(obstacle, layout);
         RecordGeneratedObstacle(obstacle, layout);
         obstacle.GetComponent<PipeObstacle>().Initialize(
             bird,
             scoreManager,
             audioManager,
-            layout.type.ToString());
+            layout.Type.ToString());
         activeObstacles.Add(obstacle);
         MaximumActiveObstacleCount = Mathf.Max(
             MaximumActiveObstacleCount,
@@ -206,12 +210,12 @@ public class PipeSpawner : MonoBehaviour
         }
 
         previousObstacleX = worldX;
-        previousRouteBottom = layout.routeBottom;
-        previousRouteTop = layout.routeTop;
+        previousRouteBottom = layout.RouteBottom;
+        previousRouteTop = layout.RouteTop;
         hasPreviousObstacle = true;
     }
 
-    private void RecordGeneratedObstacle(GameObject obstacle, ObstacleLayout layout)
+    private void RecordGeneratedObstacle(GameObject obstacle, PipeLayout layout)
     {
         TotalGeneratedObstacleCount++;
         recentObstacleXPositions.Add(obstacle.transform.position.x);
@@ -220,23 +224,23 @@ public class PipeSpawner : MonoBehaviour
             recentObstacleXPositions.RemoveAt(0);
         }
 
-        switch (layout.type)
+        switch (layout.Type)
         {
-            case ObstacleType.StandardPair:
+            case PipeObstacleType.StandardPair:
                 StandardPairCount++;
                 break;
-            case ObstacleType.AsymmetricPair:
+            case PipeObstacleType.AsymmetricPair:
                 AsymmetricPairCount++;
                 break;
-            case ObstacleType.BottomOnly:
+            case PipeObstacleType.BottomOnly:
                 BottomOnlyCount++;
                 break;
-            case ObstacleType.TopOnly:
+            case PipeObstacleType.TopOnly:
                 TopOnlyCount++;
                 break;
         }
 
-        if (!layout.hasBottomPipe)
+        if (!layout.HasBottomPipe)
         {
             return;
         }
@@ -253,10 +257,10 @@ public class PipeSpawner : MonoBehaviour
         }
     }
 
-    private void SpawnSonicPowerUp(Transform obstacleRoot, ObstacleLayout layout)
+    private void SpawnSonicPowerUp(Transform obstacleRoot, PipeLayout layout)
     {
-        float safeBottom = layout.routeBottom + 0.5f;
-        float safeTop = layout.routeTop - 0.5f;
+        float safeBottom = layout.RouteBottom + 0.5f;
+        float safeTop = layout.RouteTop - 0.5f;
         float worldY = Random.Range(safeBottom, safeTop);
         GameObject powerUp = Instantiate(
             sonicPowerUpPrefab,
@@ -267,10 +271,10 @@ public class PipeSpawner : MonoBehaviour
         powerUp.GetComponent<SonicPowerUp>().Initialize(audioManager);
     }
 
-    private void SpawnCoin(Transform obstacleRoot, ObstacleLayout layout)
+    private void SpawnCoin(Transform obstacleRoot, PipeLayout layout)
     {
-        float safeBottom = layout.routeBottom + 0.45f;
-        float safeTop = layout.routeTop - 0.45f;
+        float safeBottom = layout.RouteBottom + 0.45f;
+        float safeTop = layout.RouteTop - 0.45f;
         float worldY = Random.Range(safeBottom, safeTop);
         GameObject coin = Instantiate(
             coinPrefab,
@@ -282,215 +286,67 @@ public class PipeSpawner : MonoBehaviour
         TotalCoinsSpawned++;
     }
 
-    private ObstacleLayout GetValidatedLayout(float spacingFromPrevious)
+    private PipeLayout GetValidatedLayout(float spacingFromPrevious)
     {
-        ObstacleType type = ChooseObstacleType();
+        PipeObstacleType type = layoutGenerator.ChooseObstacleType();
 
         for (int attempt = 0; attempt < maximumRerollAttempts; attempt++)
         {
-            ObstacleLayout layout = CreateRandomLayout(type);
-
+            PipeLayout layout = layoutGenerator.CreateRandomLayout(type);
             if (IsLayoutPlayable(layout, spacingFromPrevious))
             {
                 return layout;
             }
         }
 
-        return CreateSafeFallbackLayout(type);
+        bool mustOverlapPrevious = hasPreviousObstacle
+            && spacingFromPrevious < closeSpacingThreshold;
+        PipeLayout fallback = layoutGenerator.CreateSafeFallbackLayout(
+            type,
+            mustOverlapPrevious,
+            previousRouteBottom,
+            previousRouteTop);
+        if (IsLayoutPlayable(fallback, spacingFromPrevious))
+        {
+            return fallback;
+        }
+
+        PipeLayout emergencyFallback = layoutGenerator.CreateEmergencyFallbackLayout();
+        if (IsLayoutPlayable(emergencyFallback, spacingFromPrevious))
+        {
+            return emergencyFallback;
+        }
+
+        throw new System.InvalidOperationException(
+            "Pipe configuration cannot produce a validated fallback layout.");
     }
 
-    private ObstacleLayout CreateRandomLayout(ObstacleType type)
+    private bool IsLayoutPlayable(PipeLayout layout, float spacingFromPrevious)
     {
-        if (type == ObstacleType.BottomOnly)
-        {
-            float length = Random.Range(minimumPipeLength, maximumPipeLength);
-            return new ObstacleLayout
-            {
-                type = type,
-                hasBottomPipe = true,
-                bottomPipeLength = length,
-                routeBottom = lowerPipeExtent + length,
-                routeTop = upperPipeExtent
-            };
-        }
-
-        if (type == ObstacleType.TopOnly)
-        {
-            float length = Random.Range(minimumPipeLength, maximumPipeLength);
-            return new ObstacleLayout
-            {
-                type = type,
-                hasTopPipe = true,
-                topPipeLength = length,
-                routeBottom = groundTopY,
-                routeTop = upperPipeExtent - length
-            };
-        }
-
-        if (type == ObstacleType.AsymmetricPair)
-        {
-            float topLength = Random.Range(minimumPipeLength, maximumPipeLength);
-            float bottomLength = Random.Range(minimumPipeLength, maximumPipeLength);
-            return new ObstacleLayout
-            {
-                type = type,
-                hasTopPipe = true,
-                hasBottomPipe = true,
-                topPipeLength = topLength,
-                bottomPipeLength = bottomLength,
-                routeBottom = lowerPipeExtent + bottomLength,
-                routeTop = upperPipeExtent - topLength
-            };
-        }
-
-        float gapSize = Random.Range(minimumGapSize, maximumGapSize);
-        float lowestCenter = Mathf.Max(
-            minimumGapCenter,
-            lowerPipeExtent + minimumStandardPipeLength + gapSize * 0.5f);
-        float highestCenter = Mathf.Min(
-            maximumGapCenter,
-            upperPipeExtent - minimumStandardPipeLength - gapSize * 0.5f);
-        float gapCenter = Random.Range(lowestCenter, highestCenter);
-        float gapBottom = gapCenter - gapSize * 0.5f;
-        float gapTop = gapCenter + gapSize * 0.5f;
-
-        return new ObstacleLayout
-        {
-            type = ObstacleType.StandardPair,
-            hasTopPipe = true,
-            hasBottomPipe = true,
-            topPipeLength = upperPipeExtent - gapTop,
-            bottomPipeLength = gapBottom - lowerPipeExtent,
-            routeBottom = gapBottom,
-            routeTop = gapTop
-        };
+        return layoutValidator.IsPlayable(
+            layout,
+            spacingFromPrevious,
+            hasPreviousObstacle,
+            previousRouteBottom,
+            previousRouteTop);
     }
 
-    private ObstacleType ChooseObstacleType()
-    {
-        float totalWeight = standardPairWeight + bottomOnlyWeight
-            + topOnlyWeight + asymmetricPairWeight;
-        float choice = Random.Range(0f, totalWeight);
-
-        if (choice < standardPairWeight)
-        {
-            return ObstacleType.StandardPair;
-        }
-
-        choice -= standardPairWeight;
-        if (choice < bottomOnlyWeight)
-        {
-            return ObstacleType.BottomOnly;
-        }
-
-        choice -= bottomOnlyWeight;
-        if (choice < topOnlyWeight)
-        {
-            return ObstacleType.TopOnly;
-        }
-
-        return ObstacleType.AsymmetricPair;
-    }
-
-    private bool IsLayoutPlayable(ObstacleLayout layout, float spacingFromPrevious)
-    {
-        if (layout.hasBottomPipe
-            && layout.bottomPipeLength < minimumStandardPipeLength)
-        {
-            return false;
-        }
-
-        if (layout.hasTopPipe
-            && layout.topPipeLength < minimumStandardPipeLength)
-        {
-            return false;
-        }
-
-        float routeHeight = layout.routeTop - layout.routeBottom;
-        if (routeHeight < minimumGapSize)
-        {
-            return false;
-        }
-
-        if (!hasPreviousObstacle || spacingFromPrevious >= closeSpacingThreshold)
-        {
-            return true;
-        }
-
-        float sharedRouteBottom = Mathf.Max(previousRouteBottom, layout.routeBottom);
-        float sharedRouteTop = Mathf.Min(previousRouteTop, layout.routeTop);
-        return sharedRouteTop - sharedRouteBottom >= minimumCloseRouteOverlap;
-    }
-
-    private ObstacleLayout CreateSafeFallbackLayout(ObstacleType type)
-    {
-        if (type == ObstacleType.BottomOnly)
-        {
-            return new ObstacleLayout
-            {
-                type = type,
-                hasBottomPipe = true,
-                bottomPipeLength = minimumPipeLength,
-                routeBottom = lowerPipeExtent + minimumPipeLength,
-                routeTop = upperPipeExtent
-            };
-        }
-
-        if (type == ObstacleType.TopOnly)
-        {
-            return new ObstacleLayout
-            {
-                type = type,
-                hasTopPipe = true,
-                topPipeLength = minimumPipeLength,
-                routeBottom = groundTopY,
-                routeTop = upperPipeExtent - minimumPipeLength
-            };
-        }
-
-        if (type == ObstacleType.AsymmetricPair)
-        {
-            return new ObstacleLayout
-            {
-                type = type,
-                hasTopPipe = true,
-                hasBottomPipe = true,
-                topPipeLength = minimumPipeLength,
-                bottomPipeLength = minimumPipeLength,
-                routeBottom = lowerPipeExtent + minimumPipeLength,
-                routeTop = upperPipeExtent - minimumPipeLength
-            };
-        }
-
-        const float fallbackGapSize = 3.2f;
-        return new ObstacleLayout
-        {
-            type = ObstacleType.StandardPair,
-            hasTopPipe = true,
-            hasBottomPipe = true,
-            topPipeLength = upperPipeExtent - fallbackGapSize * 0.5f,
-            bottomPipeLength = fallbackGapSize * 0.5f - lowerPipeExtent,
-            routeBottom = -fallbackGapSize * 0.5f,
-            routeTop = fallbackGapSize * 0.5f
-        };
-    }
-
-    private void ConfigureObstacle(GameObject obstacle, ObstacleLayout layout)
+    private void ConfigureObstacle(GameObject obstacle, PipeLayout layout)
     {
         Transform topPipe = obstacle.transform.Find("TopPipe");
         Transform bottomPipe = obstacle.transform.Find("BottomPipe");
 
-        topPipe.gameObject.SetActive(layout.hasTopPipe);
-        bottomPipe.gameObject.SetActive(layout.hasBottomPipe);
+        topPipe.gameObject.SetActive(layout.HasTopPipe);
+        bottomPipe.gameObject.SetActive(layout.HasBottomPipe);
 
-        if (layout.hasTopPipe)
+        if (layout.HasTopPipe)
         {
-            ConfigurePipe(topPipe, upperPipeExtent - layout.topPipeLength, upperPipeExtent);
+            ConfigurePipe(topPipe, upperPipeExtent - layout.TopPipeLength, upperPipeExtent);
         }
 
-        if (layout.hasBottomPipe)
+        if (layout.HasBottomPipe)
         {
-            ConfigurePipe(bottomPipe, lowerPipeExtent, lowerPipeExtent + layout.bottomPipeLength);
+            ConfigurePipe(bottomPipe, lowerPipeExtent, lowerPipeExtent + layout.BottomPipeLength);
         }
     }
 
