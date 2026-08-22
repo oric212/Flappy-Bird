@@ -16,6 +16,7 @@ public class GameUI : MonoBehaviour
     [SerializeField] private Toggle arcadeFeaturesToggle;
     [SerializeField] private BirdController birdController;
     [SerializeField] private TMP_Text speedBoostText;
+    [SerializeField] private Image speedBoostProgressFill;
     [SerializeField] private AudioManager audioManager;
     [SerializeField] private Slider musicVolumeSlider;
     [SerializeField] private Slider sfxVolumeSlider;
@@ -26,6 +27,7 @@ public class GameUI : MonoBehaviour
     [SerializeField] private Button mainMenuButton;
 
     private bool eventsRegistered;
+    [SerializeField] private float speedBoostProgressFullWidth = 216f;
 
     private void Start()
     {
@@ -84,10 +86,12 @@ public class GameUI : MonoBehaviour
             : "SPACE / CLICK  •  FLAP";
         bool showBoost = gameManager.IsPlaying && birdController.IsSpeedBoosted;
         speedBoostText.gameObject.SetActive(showBoost);
+        Vector2 fillSize = speedBoostProgressFill.rectTransform.sizeDelta;
+        fillSize.x = speedBoostProgressFullWidth * birdController.SpeedBoostProgress;
+        speedBoostProgressFill.rectTransform.sizeDelta = fillSize;
         if (showBoost)
         {
-            speedBoostText.text = "SPEED BOOST! "
-                + birdController.SpeedBoostTimeRemaining.ToString("0.0") + "s";
+            speedBoostText.text = "SONIC BOOST";
         }
     }
 }

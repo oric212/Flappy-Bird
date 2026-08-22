@@ -5,12 +5,12 @@ using UnityEngine.InputSystem;
 public class BirdController : MonoBehaviour
 {
     [SerializeField] private float flapStrength = 5f;
-    [SerializeField] private float forwardSpeed = 2.8f;
+    [SerializeField] private float forwardSpeed = 3f;
     [SerializeField] private GameManager gameManager;
     [SerializeField] private Camera gameplayCamera;
     [SerializeField] private float topBoundaryTolerance = 0.1f;
     [SerializeField] private AudioManager audioManager;
-    [SerializeField] private float boostedForwardSpeed = 4.6f;
+    [SerializeField] private float boostedForwardSpeed = 4.9f;
     [SerializeField] private float speedBoostDuration = 5f;
 
     private Rigidbody2D birdRigidbody;
@@ -20,6 +20,9 @@ public class BirdController : MonoBehaviour
 
     public bool IsSpeedBoosted => speedBoostTimeRemaining > 0f;
     public float SpeedBoostTimeRemaining => Mathf.Max(0f, speedBoostTimeRemaining);
+    public float SpeedBoostProgress => speedBoostDuration > 0f
+        ? Mathf.Clamp01(SpeedBoostTimeRemaining / speedBoostDuration)
+        : 0f;
 
     private void Awake()
     {
