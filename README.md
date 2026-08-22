@@ -1,4 +1,4 @@
-# Flappy Bird Clone
+# Flappy Bird
 
 A small Flappy Bird-inspired arcade game built in Unity.
 
