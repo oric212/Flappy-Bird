@@ -117,8 +117,10 @@ public class BirdController : MonoBehaviour
     private void StopRun()
     {
         speedBoostTimeRemaining = 0f;
+        birdRigidbody.linearVelocity = Vector2.zero;
+        birdRigidbody.angularVelocity = 0f;
+        birdRigidbody.simulated = false;
         gameManager.TriggerGameOver();
-        birdRigidbody.linearVelocity = new Vector2(0f, birdRigidbody.linearVelocity.y);
     }
 
     public bool ApplySpeedBoost()
